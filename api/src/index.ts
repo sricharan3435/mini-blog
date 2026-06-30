@@ -1,18 +1,17 @@
-import { Hono } from 'hono'
+import { Hono } from "hono";
 
-const app = new Hono()
+type Bindings = {
+  mini_blog_db: D1Database;
+};
 
-app.get('/blogs', (c) => {
-  return c.json({
-    message:"All blogs will come here"
-  })
-})
+const app = new Hono<{ Bindings: Bindings }>();
 
-app.get('/about', (c)=>{
-  return c.json({
-    message: "mini blog api"
-  })
-})
+app.get("/blogs", async(c) => {
+  const blogs = await c.env.mini_blog_db
+    .prepare("SELECT * FROM blogs")
+    .all();
 
+  return c.json(blogs);
+});
 
 export default app

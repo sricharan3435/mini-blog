@@ -1,7 +1,10 @@
 import { Hono } from "hono";
+import { sign } from "hono/jwt";
+import { verify } from "hono/jwt"; 
 
 type Bindings = {
   mini_blog_db: D1Database;
+  JWT_SECRET: string
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -39,13 +42,36 @@ app.get("/blogs/:id", async (c) => {
 });  
 
 app.post("/blogs", async (c) => {
+
+  //Here we have to read the header sent by client
+  const authHeader = c.req.header("Authorization");
+
+  //Checks if the client sent the authHeader, if not stop
+  if(!authHeader) {
+    return c.json(
+      {
+        success: false,
+        message: "Authorization header missing",
+      },
+      401
+    );
+  }
+
+  //first we are using jwt in blogs cuz only logged-in users can create blogs
+
+  //spliting the token cuz it contains some extra string "Bearer" like that but we only need token
+  const token = authHeader.split(" ")[1];
+
+  //verifying the token contains -> token, secret_key, hasing algo
+  const payload = await verify(token, c.env.JWT_SECRET, "HS256");
+
   const body = await c.req.json();
 
   await c.env.mini_blog_db
     .prepare(
-      "INSERT INTO blogs (title, content) VALUES (?, ?)"
+      "INSERT INTO blogs (title, content, user_id) VALUES (?, ?, ?)"
     )
-    .bind(body.title, body.content)
+    .bind(body.title, body.content, payload.id)
     .run();
 
   return c.json({
@@ -117,4 +143,81 @@ app.delete("/blogs/:id", async (c) => {
 
 });
 
-export default app
+
+
+//Authenticatoin starts from here
+
+app.post("/register", async(c) => {
+  const body = await c.req.json();
+
+  const user = await c.env.mini_blog_db
+  .prepare("SELECT * FROM users WHERE email = ?")
+  .bind(body.email)
+  .first();
+
+  if(user){
+    return c.json(
+      {
+        success: false,
+        message: "User already exists"
+      },
+      409
+    );
+  }
+
+  await c.env.mini_blog_db
+  .prepare("INSERT INTO users (name, email, password) VALUES(?, ?, ?)")
+  .bind(body.name, body.email, body.password)
+  .run();
+
+  return c.json({
+    success: true,
+    message: "User registered successfully",
+  });
+
+});
+
+
+app.post("/login", async(c) => {
+  const body = await c.req.json();
+
+  const user = await c.env.mini_blog_db
+  .prepare("SELECT * FROM users WHERE email = ?")
+  .bind(body.email)
+  .first();
+
+  if(!user){
+    return c.json({
+      success: false,
+      message: "User not found"
+    },
+    404
+  );
+}
+
+  if(body.password !== user.password){
+    return c.json({
+      success: false,
+      message: "Invalid password"
+    },
+    401
+  );
+}
+
+  const token = await sign(
+    {
+      id: user.id,
+    },
+    c.env.JWT_SECRET
+  );
+
+  return c.json({
+    success: true,
+    message: "Login Successful",
+    token: token,
+  });
+
+});
+
+
+export default app;

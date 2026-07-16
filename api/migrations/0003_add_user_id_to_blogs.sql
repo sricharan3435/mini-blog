@@ -1,0 +1,3 @@
+-- Migration number: 0003 	 2026-07-14T09:49:30.345Z
+ALTER TABLE blogs
+ADD COLUMN user_id INTEGER;
